@@ -1,7 +1,6 @@
-"""Auth routes — register, login, backed by SQLite (local dev) / D1 (prod)."""
-
-import sqlite3
 import uuid
+
+import psycopg
 from fastapi import APIRouter, HTTPException
 
 from models.schemas import UserCreate, UserLogin, UserOut
@@ -19,13 +18,15 @@ def register(payload: UserCreate):
     with get_connection() as conn:
         try:
             conn.execute(
-                "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)",
+                "INSERT INTO users (id, username, email, password_hash) VALUES (%s, %s, %s, %s)",
                 (user_id, payload.username, payload.email, password_hash),
             )
-        except sqlite3.IntegrityError:
-            raise HTTPException(status_code=400, detail="Username or email already taken")
+        except psycopg.errors.UniqueViolation:
+            raise HTTPException(
+                status_code=400, detail="Username or email already taken"
+            )
 
-        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
 
     return row_to_dict(row)
 
@@ -34,7 +35,7 @@ def register(payload: UserCreate):
 def login(payload: UserLogin):
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM users WHERE email = ?", (payload.email,)
+            "SELECT * FROM users WHERE email = %s", (payload.email,)
         ).fetchone()
 
     if not row or not verify_password(payload.password, row["password_hash"]):

@@ -1,5 +1,3 @@
-"""Videos routes — metadata CRUD, backed by SQLite (local dev) / D1 (prod)."""
-
 import uuid
 from fastapi import APIRouter, HTTPException, Depends
 
@@ -23,10 +21,10 @@ def create_video(
     with get_connection() as conn:
         conn.execute(
             """INSERT INTO videos (id, owner_id, title, description, r2_key)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (video_id, owner_id, payload.title, payload.description, key),
         )
-        row = conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
+        row = conn.execute("SELECT * FROM videos WHERE id = %s", (video_id,)).fetchone()
 
     return row_to_dict(row)
 
@@ -41,8 +39,8 @@ def list_videos():
 @router.get("/{video_id}", response_model=VideoOut)
 def get_video(video_id: str):
     with get_connection() as conn:
-        conn.execute("UPDATE videos SET views = views + 1 WHERE id = ?", (video_id,))
-        row = conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
+        conn.execute("UPDATE videos SET views = views + 1 WHERE id = %s", (video_id,))
+        row = conn.execute("SELECT * FROM videos WHERE id = %s", (video_id,)).fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail="Video not found")
@@ -52,13 +50,15 @@ def get_video(video_id: str):
 @router.delete("/{video_id}")
 def delete_video(video_id: str, owner_id: str = Depends(get_current_user_id)):
     with get_connection() as conn:
-        row = conn.execute("SELECT owner_id FROM videos WHERE id = ?", (video_id,)).fetchone()
+        row = conn.execute(
+            "SELECT owner_id FROM videos WHERE id = %s", (video_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Video not found")
         if row["owner_id"] != owner_id:
             raise HTTPException(status_code=403, detail="Not your video")
 
-        conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+        conn.execute("DELETE FROM videos WHERE id = %s", (video_id,))
 
     return {"deleted": True}
 

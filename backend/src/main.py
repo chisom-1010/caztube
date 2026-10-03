@@ -1,12 +1,3 @@
-"""
-caZTube backend — FastAPI app, deployed as a Cloudflare Python Worker.
-
-Local dev:
-    uv run uvicorn src.main:app --reload
-
-Deploy (once wrangler.toml is configured):
-    wrangler deploy
-"""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

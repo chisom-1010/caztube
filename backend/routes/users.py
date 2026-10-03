@@ -1,5 +1,3 @@
-"""Users routes — profile lookup and self-update, backed by SQLite (local dev) / D1 (prod)."""
-
 from fastapi import APIRouter, HTTPException, Depends
 
 from models.schemas import UserOut, UserUpdate
@@ -12,7 +10,7 @@ router = APIRouter()
 @router.get("/{user_id}", response_model=UserOut)
 def get_user(user_id: str):
     with get_connection() as conn:
-        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
@@ -27,12 +25,12 @@ def update_my_profile(payload: UserUpdate, user_id: str = Depends(get_current_us
     with get_connection() as conn:
         try:
             conn.execute(
-                "UPDATE users SET username = ? WHERE id = ?",
+                "UPDATE users SET username = %s WHERE id = %s",
                 (payload.username, user_id),
             )
         except Exception:
             raise HTTPException(status_code=400, detail="Username already taken")
 
-        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
 
     return row_to_dict(row)
