@@ -19,7 +19,10 @@ app = FastAPI(title="caZTube API", version="0.1.0")
 # Adjust allow_origins to your Vercel frontend URL(s) before deploying
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://caztube.vercel.app/"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://caztube.vercel.app/",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
