@@ -1,0 +1,15 @@
+name = "caztube-api"
+main = "src/main.py"
+compatibility_date = "2026-09-20"
+compatibility_flags = ["python_workers"]
+
+# Fill in after `wrangler d1 create caztube-db`
+[[d1_databases]]
+binding = "caztube_db"
+database_name = "caztube-db"
+database_id = "c668a4b3-3123-492d-b16b-a695f22a6eb6"
+
+# R2 bucket for video storage
+[[r2_buckets]]
+binding = "VIDEOS"
+bucket_name = "caztube-videos"

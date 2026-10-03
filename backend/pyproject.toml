@@ -1,0 +1,32 @@
+[project]
+name = "caztube-backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [{ name = "(jaxxx)", email = "obiajuluchisom1012@gmail.com" }]
+requires-python = ">=3.14"
+dependencies = [
+    "bcrypt<4.1",
+    "boto3>=1.43.106",
+    "fastapi[standard]>=0.142.2",
+    "passlib[bcrypt]>=1.7.4",
+    "pydantic[email]>=2.13.5",
+    "python-dotenv>=1.2.3",
+    "python-jose>=3.5.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+backend = "backend:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
