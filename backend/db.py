@@ -1,37 +1,33 @@
-"""
-Local database access — SQLite for local dev (same engine as D1).
-
-When deployed to Cloudflare Python Workers, swap this module's functions
-to use the D1 binding (env.DB) instead. The SQL itself barely changes —
-only how the connection/query is made.
-"""
-
-import sqlite3
-from pathlib import Path
+import os
 from contextlib import contextmanager
 
-DB_PATH = Path(__file__).parent / "local.db"
-SCHEMA_PATH = Path(__file__).parent / "schema.sql"
-# db.py lives at backend/ root, alongside schema.sql and r2.py
+import psycopg
+from psycopg.rows import dict_row
 
-
-def init_db():
-    """Create tables if they don't exist yet. Call this once at startup."""
-    with get_connection() as conn:
-        conn.executescript(SCHEMA_PATH.read_text())
+# InstaCloud injects this automatically once you run:
+#   insta secrets bind DATABASE_URL postgres/db --to compute/app
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 
 @contextmanager
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # lets us access columns by name, like a dict
-    conn.execute("PRAGMA foreign_keys = ON")
+    """Yields a psycopg connection whose rows behave like dicts,
+    mirroring the old sqlite3.Row + row_factory setup."""
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row, autocommit=True)
     try:
         yield conn
-        conn.commit()
     finally:
         conn.close()
 
 
-def row_to_dict(row: sqlite3.Row) -> dict:
-    return dict(row)
+def row_to_dict(row):
+    return dict(row) if row is not None else None
+
+
+def init_db():
+    schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
+    with open(schema_path, "r") as f:
+        schema = f.read()
+    with get_connection() as conn:
+        # multiple ';'-separated statements, no params -> simple query protocol handles this fine
+        conn.execute(schema)
