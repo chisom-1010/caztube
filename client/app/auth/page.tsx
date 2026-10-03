@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import AuthForm from "../components/AuthForm";
-import { useAuth } from "../hooks/useAuth";
+import AuthForm from "../../components/AuthForm";
+import { useAuth } from "../../hooks/useAuth";
 
 export default function AuthPage() {
   const router = useRouter();
@@ -14,9 +14,8 @@ export default function AuthPage() {
     return null;
   }
 
-  const handleAuthSuccess = (user: any) => {
-    // Redirect to home page after successful auth
-    router.push("/");
+  const handleAuthSuccess = () => {
+    router.push("/profile");
   };
 
   return (
