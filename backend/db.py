@@ -1,19 +1,23 @@
 import os
+from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 
 import psycopg
+from dotenv import load_dotenv
+from psycopg import Connection
 from psycopg.rows import dict_row
 
-# InstaCloud injects this automatically once you run:
-#   insta secrets bind DATABASE_URL postgres/db --to compute/app
-DATABASE_URL = os.environ["DATABASE_URL"]
+load_dotenv()
+
+database_url = os.environ["DATABASE_URL"]
+DATABASE_URL = database_url
 
 
 @contextmanager
-def get_connection():
-    """Yields a psycopg connection whose rows behave like dicts,
-    mirroring the old sqlite3.Row + row_factory setup."""
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row, autocommit=True)
+def get_connection() -> Iterator[Connection[Any]]:
+    row_factory: Any = dict_row
+    conn = psycopg.connect(DATABASE_URL, row_factory=row_factory, autocommit=True)
     try:
         yield conn
     finally:
@@ -30,4 +34,4 @@ def init_db():
         schema = f.read()
     with get_connection() as conn:
         # multiple ';'-separated statements, no params -> simple query protocol handles this fine
-        conn.execute(schema)
+        conn.execute(schema)  # type: ignore[reportArgumentType]
