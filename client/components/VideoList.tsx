@@ -10,7 +10,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Skeleton } from './ui/skeleton';
-import { Play, Calendar, RefreshCw, Clock, User, Pencil, Check, X } from 'lucide-react';
+import { Play, Calendar, RefreshCw, Clock, User, Pencil, Check, X, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import gsap from 'gsap';
 import { useRouter } from 'next/navigation';
@@ -37,11 +37,19 @@ export default function VideoList({ onVideoClick, className, videos: providedVid
   const [editDescription, setEditDescription] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Videos removed locally after a successful delete, so the card disappears
+  // immediately without needing a refetch.
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   const gridRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   const baseVideos = providedVideos ?? fetchedVideos;
-  const videos = baseVideos.map((v) => overrides[v.id] ?? v);
+  const videos = baseVideos
+    .filter((v) => !deletedIds.has(v.id))
+    .map((v) => overrides[v.id] ?? v);
 
   useEffect(() => {
     if (providedVideos !== undefined) return; // caller already supplied the list
@@ -130,6 +138,32 @@ export default function VideoList({ onVideoClick, className, videos: providedVid
     }
   };
 
+  const askDelete = (e: React.MouseEvent, videoId: string) => {
+    e.stopPropagation();
+    setConfirmDeleteId(videoId);
+  };
+
+  const cancelDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConfirmDeleteId(null);
+  };
+
+  const confirmDelete = async (e: React.MouseEvent, video: Video) => {
+    e.stopPropagation();
+    setDeletingId(video.id);
+    try {
+      await apiClient.deleteVideo(video.id);
+      setDeletedIds((prev) => new Set(prev).add(video.id));
+      setConfirmDeleteId(null);
+      toast('Video Deleted', { description: `"${video.title}" was removed.` });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete video';
+      toast('Delete Failed', { description: message });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const formatDuration = (seconds?: number | null): string => {
     if (!seconds) return '';
     const m = Math.floor(seconds / 60);
@@ -199,12 +233,14 @@ export default function VideoList({ onVideoClick, className, videos: providedVid
       {videos.map((video) => {
         const isOwner = !!user && user.id === video.owner_id;
         const isEditing = editingId === video.id;
+        const isConfirmingDelete = confirmDeleteId === video.id;
+        const isDeleting = deletingId === video.id;
 
         return (
           <Card
             key={video.id}
             className="video-card overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer group"
-            onClick={() => !isEditing && handleVideoClick(video)}
+            onClick={() => !isEditing && !isConfirmingDelete && handleVideoClick(video)}
           >
             <CardContent className="p-0">
               <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
@@ -242,15 +278,48 @@ export default function VideoList({ onVideoClick, className, videos: providedVid
                   </Badge>
                 )}
 
-                {isOwner && !isEditing && (
-                  <Button
-                    size="icon"
-                    variant="secondary"
-                    className="absolute top-2 right-2 h-7 w-7 bg-black/70 text-white hover:bg-black/90"
-                    onClick={(e) => startEdit(e, video)}
+                {isOwner && !isEditing && !isConfirmingDelete && (
+                  <div className="absolute top-2 right-2 flex items-center gap-1.5">
+                    <Button
+                      size="icon"
+                      variant="secondary"
+                      className="h-7 w-7 bg-black/70 text-white hover:bg-black/90"
+                      onClick={(e) => startEdit(e, video)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="secondary"
+                      className="h-7 w-7 bg-black/70 text-white hover:bg-red-600"
+                      onClick={(e) => askDelete(e, video.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+
+                {isConfirmingDelete && (
+                  <div
+                    className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-3 p-4 text-center"
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+                    <p className="text-white text-sm font-medium">Delete this video?</p>
+                    <p className="text-white/70 text-xs">This can't be undone.</p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={(e) => confirmDelete(e, video)}
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? 'Deleting…' : 'Delete'}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={cancelDelete} disabled={isDeleting}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </div>
 
