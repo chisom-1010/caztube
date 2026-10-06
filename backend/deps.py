@@ -6,8 +6,7 @@ from jose import JWTError
 
 from auth_utils import decode_access_token
 
-# Using HTTPBearer (not a raw Header) makes FastAPI show a proper
-# "Authorize" button in /docs, with a dedicated token field.
+# "Authorize" button in the Swagger UI, and also makes it easier to extract the token from the header.
 _security = HTTPBearer()
 
 

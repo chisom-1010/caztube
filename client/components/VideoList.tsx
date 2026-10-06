@@ -2,12 +2,15 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { apiClient } from '../lib/api';
+import { useAuth } from '../hooks/useAuth';
 import { Video } from '../shared/types/video';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
 import { Skeleton } from './ui/skeleton';
-import { Play, Calendar, RefreshCw, Clock } from 'lucide-react';
+import { Play, Calendar, RefreshCw, Clock, User, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import gsap from 'gsap';
 import { useRouter } from 'next/navigation';
@@ -20,14 +23,25 @@ interface VideoListProps {
 }
 
 export default function VideoList({ onVideoClick, className, videos: providedVideos }: VideoListProps) {
+  const { user } = useAuth();
   const [fetchedVideos, setFetchedVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(providedVideos === undefined);
   const [error, setError] = useState<string | null>(null);
 
+  // Local overrides so an edit shows up immediately without needing to refetch
+  // or plumb state back up through the caller that supplied `videos`.
+  const [overrides, setOverrides] = useState<Record<string, Video>>({});
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const gridRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  const videos = providedVideos ?? fetchedVideos;
+  const baseVideos = providedVideos ?? fetchedVideos;
+  const videos = baseVideos.map((v) => overrides[v.id] ?? v);
 
   useEffect(() => {
     if (providedVideos !== undefined) return; // caller already supplied the list
@@ -76,6 +90,43 @@ export default function VideoList({ onVideoClick, className, videos: providedVid
     } else {
       router.push(`/video/${video.id}`);
       toast(`Opening: ${video.title}`, { duration: 2000 });
+    }
+  };
+
+  const startEdit = (e: React.MouseEvent, video: Video) => {
+    e.stopPropagation();
+    setEditingId(video.id);
+    setEditTitle(video.title);
+    setEditDescription(video.description ?? '');
+  };
+
+  const cancelEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingId(null);
+  };
+
+  const saveEdit = async (e: React.MouseEvent, video: Video) => {
+    e.stopPropagation();
+
+    if (!editTitle.trim()) {
+      toast('Title Required', { description: 'The title cannot be empty' });
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const updated = await apiClient.updateVideo(video.id, {
+        title: editTitle.trim(),
+        description: editDescription.trim() || undefined,
+      });
+      setOverrides((prev) => ({ ...prev, [video.id]: updated }));
+      setEditingId(null);
+      toast('Video Updated', { description: 'Title and description saved.' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update video';
+      toast('Update Failed', { description: message });
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -145,60 +196,127 @@ export default function VideoList({ onVideoClick, className, videos: providedVid
       ref={gridRef}
       className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6 ${className}`}
     >
-      {videos.map((video) => (
-        <Card
-          key={video.id}
-          className="video-card overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer group"
-          onClick={() => handleVideoClick(video)}
-        >
-          <CardContent className="p-0">
-            {/* Placeholder preview — no thumbnail generation yet, so we show
-                an icon instead of eagerly loading the full video per card */}
-            <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
-              <div className="bg-white/10 rounded-full p-4 group-hover:bg-white/20 group-hover:scale-110 transition-all duration-300">
-                <Play className="h-8 w-8 text-white fill-current" />
-              </div>
+      {videos.map((video) => {
+        const isOwner = !!user && user.id === video.owner_id;
+        const isEditing = editingId === video.id;
 
-              {video.duration_seconds != null && (
-                <Badge
-                  variant="secondary"
-                  className="absolute bottom-2 right-2 bg-black/70 text-white"
+        return (
+          <Card
+            key={video.id}
+            className="video-card overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer group"
+            onClick={() => !isEditing && handleVideoClick(video)}
+          >
+            <CardContent className="p-0">
+              <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
+                {video.thumbnail_url ? (
+                  // Real, client-captured thumbnail
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={video.thumbnail_url}
+                    alt={video.title}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                ) : null}
+
+                <div
+                  className={`relative bg-white/10 rounded-full p-4 group-hover:bg-white/20 group-hover:scale-110 transition-all duration-300 ${
+                    video.thumbnail_url ? 'bg-black/30' : ''
+                  }`}
                 >
-                  <Clock className="h-3 w-3 mr-1" />
-                  {formatDuration(video.duration_seconds)}
-                </Badge>
-              )}
-
-              {video.status === 'processing' && (
-                <Badge variant="secondary" className="absolute top-2 left-2 bg-black/70 text-white">
-                  Processing…
-                </Badge>
-              )}
-            </div>
-
-            <div className="p-4 space-y-3">
-              <h3 className="font-semibold text-lg line-clamp-2 group-hover:text-primary transition-colors leading-tight">
-                {video.title}
-              </h3>
-
-              {video.description && (
-                <p className="text-muted-foreground text-sm line-clamp-2 leading-relaxed">
-                  {video.description}
-                </p>
-              )}
-
-              <div className="flex items-center justify-between pt-2">
-                <span className="text-xs text-muted-foreground">{video.views} views</span>
-
-                <div className="flex items-center text-xs text-muted-foreground">
-                  <Calendar className="h-3 w-3 mr-1" />
-                  {formatDate(video.created_at)}
+                  <Play className="h-8 w-8 text-white fill-current" />
                 </div>
+
+                {video.duration_seconds != null && (
+                  <Badge
+                    variant="secondary"
+                    className="absolute bottom-2 right-2 bg-black/70 text-white"
+                  >
+                    <Clock className="h-3 w-3 mr-1" />
+                    {formatDuration(video.duration_seconds)}
+                  </Badge>
+                )}
+
+                {video.status === 'processing' && (
+                  <Badge variant="secondary" className="absolute top-2 left-2 bg-black/70 text-white">
+                    Processing…
+                  </Badge>
+                )}
+
+                {isOwner && !isEditing && (
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="absolute top-2 right-2 h-7 w-7 bg-black/70 text-white hover:bg-black/90"
+                    onClick={(e) => startEdit(e, video)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+
+              <div className="p-4 space-y-3">
+                {isEditing ? (
+                  <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+                    <Input
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      placeholder="Title"
+                      disabled={savingEdit}
+                    />
+                    <Textarea
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      placeholder="Description (optional)"
+                      className="min-h-[70px]"
+                      disabled={savingEdit}
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={(e) => saveEdit(e, video)}
+                        disabled={savingEdit || !editTitle.trim()}
+                      >
+                        <Check className="h-3.5 w-3.5 mr-1" />
+                        Save
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={cancelEdit} disabled={savingEdit}>
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <h3 className="font-semibold text-lg line-clamp-2 group-hover:text-primary transition-colors leading-tight">
+                      {video.title}
+                    </h3>
+
+                    <div className="flex items-center text-xs text-muted-foreground">
+                      <User className="h-3 w-3 mr-1" />
+                      {video.owner_username}
+                    </div>
+
+                    {video.description && (
+                      <p className="text-muted-foreground text-sm line-clamp-2 leading-relaxed">
+                        {video.description}
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-xs text-muted-foreground">{video.views} views</span>
+
+                      <div className="flex items-center text-xs text-muted-foreground">
+                        <Calendar className="h-3 w-3 mr-1" />
+                        {formatDate(video.created_at)}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }

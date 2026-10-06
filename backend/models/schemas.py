@@ -34,15 +34,20 @@ class VideoCreate(BaseModel):
     title: str
     description: str | None = None
 
+class VideoUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
 
 class VideoOut(BaseModel):
     id: str
     owner_id: str
+    owner_username: str
     title: str
     description: str | None
     r2_key: str
     duration_seconds: int | None
     file_size_bytes: int | None
+    thumbnail_url: str | None
     status: str
     views: int
     created_at: datetime

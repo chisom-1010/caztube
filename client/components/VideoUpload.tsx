@@ -21,11 +21,11 @@ interface VideoUploadProps {
 
 // Uploads a file directly to R2 via a presigned URL, reporting real progress.
 // fetch() has no upload-progress event, so XMLHttpRequest is used here instead.
-function uploadToR2(uploadUrl: string, file: File, onProgress: (pct: number) => void) {
+function uploadToR2(uploadUrl: string, file: File | Blob, onProgress: (pct: number) => void) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", uploadUrl);
-    xhr.setRequestHeader("Content-Type", file.type);
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
 
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
@@ -43,6 +43,58 @@ function uploadToR2(uploadUrl: string, file: File, onProgress: (pct: number) => 
     xhr.onerror = () => reject(new Error("Network error during upload"));
 
     xhr.send(file);
+  });
+}
+
+// Grabs a single frame from the video file client-side (no server-side ffmpeg
+// needed) by loading it into a hidden <video>, seeking a bit in, and drawing
+// that frame to a <canvas>. Returns a JPEG blob.
+function captureThumbnail(file: File): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+
+    const url = URL.createObjectURL(file);
+    video.src = url;
+
+    const cleanup = () => URL.revokeObjectURL(url);
+
+    video.onloadedmetadata = () => {
+      // Seek a little into the clip so we don't grab a black first frame.
+      const target = Number.isFinite(video.duration) ? Math.min(1, video.duration / 2) : 0;
+      video.currentTime = target || 0;
+    };
+
+    video.onseeked = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx || canvas.width === 0 || canvas.height === 0) {
+        cleanup();
+        reject(new Error("Could not create a thumbnail from this video"));
+        return;
+      }
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        (blob) => {
+          cleanup();
+          if (blob) resolve(blob);
+          else reject(new Error("Could not generate thumbnail image"));
+        },
+        "image/jpeg",
+        0.8
+      );
+    };
+
+    video.onerror = () => {
+      cleanup();
+      reject(new Error("Could not read video file for thumbnail"));
+    };
   });
 }
 
@@ -126,9 +178,32 @@ export default function VideoUpload({ onUploadComplete, className }: VideoUpload
       // 2. Upload the file straight to R2, with real progress
       await uploadToR2(upload_url, file, setProgress);
 
-      // 3. Register the video's metadata — the backend reads the owner from
+      // 3. Best-effort thumbnail: grab a frame client-side and upload it too.
+      //    If this fails for any reason, we still proceed without one.
+      let thumbnailKey: string | undefined;
+      try {
+        const thumbBlob = await captureThumbnail(file);
+        const thumbFile = new File([thumbBlob], `${file.name}.thumb.jpg`, {
+          type: "image/jpeg",
+        });
+        const { upload_url: thumbUploadUrl, r2_key: thumbR2Key } = await apiClient.getUploadUrl(
+          thumbFile.name,
+          thumbFile.type
+        );
+        await uploadToR2(thumbUploadUrl, thumbFile, () => {});
+        thumbnailKey = thumbR2Key;
+      } catch (thumbError) {
+        console.warn("Thumbnail generation failed, continuing without one:", thumbError);
+      }
+
+      // 4. Register the video's metadata — the backend reads the owner from
       //    the Bearer token api.ts attaches automatically, no need to pass it here
-      const video = await apiClient.createVideo(title.trim(), description.trim() || undefined, r2_key);
+      const video = await apiClient.createVideo(
+        title.trim(),
+        description.trim() || undefined,
+        r2_key,
+        thumbnailKey
+      );
 
       setProgress(100);
 

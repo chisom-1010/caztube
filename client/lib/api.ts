@@ -64,8 +64,10 @@ class ApiClient {
     let response: Response;
     try {
       response = await fetch(url, config);
-    } catch {
-      throw new Error(`Network error: cannot reach ${url}. Is the backend running?`);
+    } catch (err) {
+      // Don't leak the internal backend URL into a user-facing error message.
+      console.error(`Network error reaching ${url}:`, err);
+      throw new Error('Network error: could not reach the server. Please try again.');
     }
 
     if (response.status === 204) {
@@ -138,11 +140,22 @@ class ApiClient {
   }
 
   // owner_id is no longer passed — the backend derives it from the Bearer token
-  async createVideo(title: string, description?: string, r2Key?: string) {
-    const query = r2Key ? `?r2_key=${encodeURIComponent(r2Key)}` : '';
+  async createVideo(title: string, description?: string, r2Key?: string, thumbnailKey?: string) {
+    const params = new URLSearchParams();
+    if (r2Key) params.set('r2_key', r2Key);
+    if (thumbnailKey) params.set('thumbnail_key', thumbnailKey);
+    const query = params.toString() ? `?${params.toString()}` : '';
+
     return this.request<Video>(`/videos${query}`, {
       method: 'POST',
       body: JSON.stringify({ title, description }),
+    });
+  }
+
+  async updateVideo(id: string, updates: { title?: string; description?: string }) {
+    return this.request<Video>(`/videos/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
     });
   }
 
