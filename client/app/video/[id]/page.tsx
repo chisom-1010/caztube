@@ -167,9 +167,10 @@ export default function VideoPage() {
           </div>
 
           <div className="xl:col-span-1 w-full">
-            <h2 className="text-xl font-bold mb-6">More Videos</h2>
+            <h2 className="text-xl font-bold mb-4">More Videos</h2>
             <VideoList
               videos={moreVideos}
+              layout="sidebar"
               onVideoClick={(clickedVideo) =>
                 router.push(`/video/${clickedVideo.id}`)
               }

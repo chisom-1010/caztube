@@ -10,7 +10,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Skeleton } from './ui/skeleton';
-import { Play, Calendar, RefreshCw, Clock, User, Pencil, Check, X } from 'lucide-react';
+import { Play, Calendar, RefreshCw, Clock, User, Pencil, Check, X, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import gsap from 'gsap';
 import { useRouter } from 'next/navigation';
@@ -18,11 +18,17 @@ import { useRouter } from 'next/navigation';
 interface VideoListProps {
   onVideoClick?: (video: Video) => void;
   className?: string;
-  /** Pass a preloaded/filtered list (e.g. one user's videos) to skip the internal fetch. */
+
   videos?: Video[];
+  layout?: 'grid' | 'sidebar';
 }
 
-export default function VideoList({ onVideoClick, className, videos: providedVideos }: VideoListProps) {
+export default function VideoList({
+  onVideoClick,
+  className,
+  videos: providedVideos,
+  layout = 'grid',
+}: VideoListProps) {
   const { user } = useAuth();
   const [fetchedVideos, setFetchedVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(providedVideos === undefined);
@@ -37,11 +43,21 @@ export default function VideoList({ onVideoClick, className, videos: providedVid
   const [editDescription, setEditDescription] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Videos removed locally after a successful delete, so the card disappears
+  // immediately without needing a refetch.
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   const gridRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
+  const isSidebar = layout === 'sidebar';
+
   const baseVideos = providedVideos ?? fetchedVideos;
-  const videos = baseVideos.map((v) => overrides[v.id] ?? v);
+  const videos = baseVideos
+    .filter((v) => !deletedIds.has(v.id))
+    .map((v) => overrides[v.id] ?? v);
 
   useEffect(() => {
     if (providedVideos !== undefined) return; // caller already supplied the list
@@ -130,6 +146,32 @@ export default function VideoList({ onVideoClick, className, videos: providedVid
     }
   };
 
+  const askDelete = (e: React.MouseEvent, videoId: string) => {
+    e.stopPropagation();
+    setConfirmDeleteId(videoId);
+  };
+
+  const cancelDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConfirmDeleteId(null);
+  };
+
+  const confirmDelete = async (e: React.MouseEvent, video: Video) => {
+    e.stopPropagation();
+    setDeletingId(video.id);
+    try {
+      await apiClient.deleteVideo(video.id);
+      setDeletedIds((prev) => new Set(prev).add(video.id));
+      setConfirmDeleteId(null);
+      toast('Video Deleted', { description: `"${video.title}" was removed.` });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete video';
+      toast('Delete Failed', { description: message });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const formatDuration = (seconds?: number | null): string => {
     if (!seconds) return '';
     const m = Math.floor(seconds / 60);
@@ -145,9 +187,30 @@ export default function VideoList({ onVideoClick, className, videos: providedVid
     });
   };
 
+  const containerClassName = isSidebar
+    ? `flex flex-col gap-3 ${className ?? ''}`
+    : `grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6 ${className ?? ''}`;
+
   if (loading) {
+    if (isSidebar) {
+      return (
+        <div className={containerClassName}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex gap-3">
+              <Skeleton className="w-40 aspect-video rounded-md flex-shrink-0" />
+              <div className="flex-1 space-y-2 py-1">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-3 w-2/3" />
+                <Skeleton className="h-3 w-1/3" />
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     return (
-      <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6 ${className}`}>
+      <div className={containerClassName}>
         {Array.from({ length: 6 }).map((_, i) => (
           <Card key={i} className="overflow-hidden">
             <CardContent className="p-0">
@@ -192,99 +255,188 @@ export default function VideoList({ onVideoClick, className, videos: providedVid
   }
 
   return (
-    <div
-      ref={gridRef}
-      className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6 ${className}`}
-    >
+    <div ref={gridRef} className={containerClassName}>
       {videos.map((video) => {
         const isOwner = !!user && user.id === video.owner_id;
         const isEditing = editingId === video.id;
+        const isConfirmingDelete = confirmDeleteId === video.id;
+        const isDeleting = deletingId === video.id;
+
+        const thumbnail = (
+          <div
+            className={`relative bg-black flex items-center justify-center overflow-hidden flex-shrink-0 ${
+              isSidebar ? 'w-40 aspect-video rounded-md' : 'aspect-video'
+            }`}
+          >
+            {video.thumbnail_url ? (
+              // Real, client-captured thumbnail
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={video.thumbnail_url}
+                alt={video.title}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            ) : null}
+
+            <div
+              className={`relative bg-white/10 rounded-full group-hover:bg-white/20 group-hover:scale-110 transition-all duration-300 ${
+                video.thumbnail_url ? 'bg-black/30' : ''
+              } ${isSidebar ? 'p-2' : 'p-4'}`}
+            >
+              <Play className={`text-white fill-current ${isSidebar ? 'h-4 w-4' : 'h-8 w-8'}`} />
+            </div>
+
+            {video.duration_seconds != null && (
+              <Badge
+                variant="secondary"
+                className={`absolute bottom-1 right-1 bg-black/70 text-white ${
+                  isSidebar ? 'text-[10px] px-1 py-0 h-auto' : ''
+                }`}
+              >
+                <Clock className="h-3 w-3 mr-1" />
+                {formatDuration(video.duration_seconds)}
+              </Badge>
+            )}
+
+            {video.status === 'processing' && (
+              <Badge variant="secondary" className="absolute top-1 left-1 bg-black/70 text-white text-[10px]">
+                Processing…
+              </Badge>
+            )}
+
+            {isOwner && !isEditing && !isConfirmingDelete && (
+              <div className="absolute top-1 right-1 flex items-center gap-1">
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className={`bg-black/70 text-white hover:bg-black/90 ${isSidebar ? 'h-5 w-5' : 'h-7 w-7'}`}
+                  onClick={(e) => startEdit(e, video)}
+                >
+                  <Pencil className={isSidebar ? 'h-2.5 w-2.5' : 'h-3.5 w-3.5'} />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className={`bg-black/70 text-white hover:bg-red-600 ${isSidebar ? 'h-5 w-5' : 'h-7 w-7'}`}
+                  onClick={(e) => askDelete(e, video.id)}
+                >
+                  <Trash2 className={isSidebar ? 'h-2.5 w-2.5' : 'h-3.5 w-3.5'} />
+                </Button>
+              </div>
+            )}
+
+            {isConfirmingDelete && (
+              <div
+                className={`absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-center ${
+                  isSidebar ? 'gap-1.5 p-2' : 'gap-3 p-4'
+                }`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p className={`text-white font-medium ${isSidebar ? 'text-[11px]' : 'text-sm'}`}>
+                  Delete video?
+                </p>
+                {!isSidebar && <p className="text-white/70 text-xs">This can't be undone.</p>}
+                <div className={`flex items-center ${isSidebar ? 'gap-1' : 'gap-2'}`}>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className={isSidebar ? 'h-6 px-2 text-[11px]' : ''}
+                    onClick={(e) => confirmDelete(e, video)}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? '…' : 'Delete'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className={isSidebar ? 'h-6 px-2 text-[11px]' : ''}
+                    onClick={cancelDelete}
+                    disabled={isDeleting}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+        const editForm = (
+          <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+            <Input
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="Title"
+              disabled={savingEdit}
+              className={isSidebar ? 'h-8 text-sm' : ''}
+            />
+            <Textarea
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              placeholder="Description (optional)"
+              className={isSidebar ? 'min-h-[50px] text-sm' : 'min-h-[70px]'}
+              disabled={savingEdit}
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={(e) => saveEdit(e, video)}
+                disabled={savingEdit || !editTitle.trim()}
+              >
+                <Check className="h-3.5 w-3.5 mr-1" />
+                Save
+              </Button>
+              <Button size="sm" variant="outline" onClick={cancelEdit} disabled={savingEdit}>
+                <X className="h-3.5 w-3.5 mr-1" />
+                Cancel
+              </Button>
+            </div>
+          </div>
+        );
+
+        if (isSidebar) {
+          return (
+            <div
+              key={video.id}
+              className="video-card flex gap-3 cursor-pointer group"
+              onClick={() => !isEditing && !isConfirmingDelete && handleVideoClick(video)}
+            >
+              {thumbnail}
+
+              <div className="flex-1 min-w-0">
+                {isEditing ? (
+                  editForm
+                ) : (
+                  <>
+                    <h3 className="font-medium text-sm line-clamp-2 group-hover:text-primary transition-colors leading-snug">
+                      {video.title}
+                    </h3>
+                    <div className="flex items-center text-xs text-muted-foreground mt-1">
+                      <User className="h-3 w-3 mr-1 flex-shrink-0" />
+                      <span className="truncate">{video.owner_username}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {video.views} views · {formatDate(video.created_at)}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        }
 
         return (
           <Card
             key={video.id}
             className="video-card overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer group"
-            onClick={() => !isEditing && handleVideoClick(video)}
+            onClick={() => !isEditing && !isConfirmingDelete && handleVideoClick(video)}
           >
             <CardContent className="p-0">
-              <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
-                {video.thumbnail_url ? (
-                  // Real, client-captured thumbnail
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={video.thumbnail_url}
-                    alt={video.title}
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                ) : null}
-
-                <div
-                  className={`relative bg-white/10 rounded-full p-4 group-hover:bg-white/20 group-hover:scale-110 transition-all duration-300 ${
-                    video.thumbnail_url ? 'bg-black/30' : ''
-                  }`}
-                >
-                  <Play className="h-8 w-8 text-white fill-current" />
-                </div>
-
-                {video.duration_seconds != null && (
-                  <Badge
-                    variant="secondary"
-                    className="absolute bottom-2 right-2 bg-black/70 text-white"
-                  >
-                    <Clock className="h-3 w-3 mr-1" />
-                    {formatDuration(video.duration_seconds)}
-                  </Badge>
-                )}
-
-                {video.status === 'processing' && (
-                  <Badge variant="secondary" className="absolute top-2 left-2 bg-black/70 text-white">
-                    Processing…
-                  </Badge>
-                )}
-
-                {isOwner && !isEditing && (
-                  <Button
-                    size="icon"
-                    variant="secondary"
-                    className="absolute top-2 right-2 h-7 w-7 bg-black/70 text-white hover:bg-black/90"
-                    onClick={(e) => startEdit(e, video)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-              </div>
+              {thumbnail}
 
               <div className="p-4 space-y-3">
                 {isEditing ? (
-                  <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
-                    <Input
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      placeholder="Title"
-                      disabled={savingEdit}
-                    />
-                    <Textarea
-                      value={editDescription}
-                      onChange={(e) => setEditDescription(e.target.value)}
-                      placeholder="Description (optional)"
-                      className="min-h-[70px]"
-                      disabled={savingEdit}
-                    />
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        onClick={(e) => saveEdit(e, video)}
-                        disabled={savingEdit || !editTitle.trim()}
-                      >
-                        <Check className="h-3.5 w-3.5 mr-1" />
-                        Save
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={cancelEdit} disabled={savingEdit}>
-                        <X className="h-3.5 w-3.5 mr-1" />
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
+                  editForm
                 ) : (
                   <>
                     <h3 className="font-semibold text-lg line-clamp-2 group-hover:text-primary transition-colors leading-tight">
