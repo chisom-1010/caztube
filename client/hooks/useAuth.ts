@@ -1,4 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
+"use client";
+
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  ReactNode,
+} from "react";
 import { apiClient } from "../lib/api";
 import { User } from "../shared/types/user";
 import { toast } from "sonner";
@@ -40,7 +49,15 @@ function loadUserFromStorage(): User | null {
   }
 }
 
-export const useAuth = (): UseAuthReturn => {
+const AuthContext = createContext<UseAuthReturn | null>(null);
+
+
+// component re-instantiates. AuthProvider wraps the whole app (in
+// app/layout.tsx), and every call to useAuth() below reads from this one
+// shared instance. So when AuthForm logs someone in (or signs them up),
+// the Header's UserNavigation — and every other consumer — sees it
+// immediately, without needing to remount or re-read localStorage itself.
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -96,8 +113,6 @@ export const useAuth = (): UseAuthReturn => {
 
   const updateUsername = useCallback(
     async (username: string) => {
-      if (!user) throw new Error("Not authenticated");
-
       try {
         const updated = await apiClient.updateUsername(username);
         saveUserToStorage(updated);
@@ -109,10 +124,10 @@ export const useAuth = (): UseAuthReturn => {
         throw error;
       }
     },
-    [user]
+    []
   );
 
-  return {
+  const value: UseAuthReturn = {
     user,
     isAuthenticated: !!user && !loading,
     loading,
@@ -121,4 +136,17 @@ export const useAuth = (): UseAuthReturn => {
     logout,
     updateUsername,
   };
+
+
+  return React.createElement(AuthContext.Provider, { value }, children);
+}
+
+export const useAuth = (): UseAuthReturn => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error(
+      "useAuth() was called outside <AuthProvider>. Wrap app/layout.tsx's children in <AuthProvider>."
+    );
+  }
+  return ctx;
 };

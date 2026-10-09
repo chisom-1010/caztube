@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { Dialog, DialogContent } from "./ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { User, Settings, LogOut, UserPlus } from "lucide-react";
 import AuthForm from "./AuthForm";
 import Link from "next/link";
@@ -41,7 +41,8 @@ export default function UserNavigation() {
         </Button>
 
         <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
-          <DialogContent className="p-0 max-w-md">
+          <DialogContent className="p-6 max-w-md">
+            <DialogTitle className="sr-only">Sign in to caZTube</DialogTitle>
             <AuthForm
               onAuthSuccess={() => setShowAuthDialog(false)}
               onClose={() => setShowAuthDialog(false)}
