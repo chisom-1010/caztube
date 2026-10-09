@@ -11,12 +11,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { User, Settings, LogOut, UserPlus } from "lucide-react";
 import AuthForm from "./AuthForm";
 import Link from "next/link";
-  import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden"; // ou le wrapper shadcn si tu l'as
-
 
 export default function UserNavigation() {
   const { user, isAuthenticated, loading, logout } = useAuth();
@@ -42,18 +40,15 @@ export default function UserNavigation() {
           Sign In
         </Button>
 
-      
-<Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
-  <DialogContent className="p-0 max-w-md">
-    <VisuallyHidden>
-      <DialogTitle>Sign in to caZTube</DialogTitle>
-    </VisuallyHidden>
-    <AuthForm
-      onAuthSuccess={() => setShowAuthDialog(false)}
-      onClose={() => setShowAuthDialog(false)}
-    />
-  </DialogContent>
-</Dialog>
+        <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+          <DialogContent className="p-6 max-w-md">
+            <DialogTitle className="sr-only">Sign in to caZTube</DialogTitle>
+            <AuthForm
+              onAuthSuccess={() => setShowAuthDialog(false)}
+              onClose={() => setShowAuthDialog(false)}
+            />
+          </DialogContent>
+        </Dialog>
       </>
     );
   }
