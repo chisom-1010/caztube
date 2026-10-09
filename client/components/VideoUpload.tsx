@@ -18,14 +18,19 @@ interface VideoUploadProps {
   onUploadComplete?: (video: Video) => void;
   className?: string;
 }
-
-// Uploads a file directly to R2 via a presigned URL, reporting real progress.
-// fetch() has no upload-progress event, so XMLHttpRequest is used here instead.
-function uploadToR2(uploadUrl: string, file: File | Blob, onProgress: (pct: number) => void) {
+// Uploads a file to R2 using a presigned URL, with progress reporting.
+function uploadToR2(
+  uploadUrl: string,
+  file: File | Blob,
+  onProgress: (pct: number) => void,
+) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", uploadUrl);
-    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.setRequestHeader(
+      "Content-Type",
+      file.type || "application/octet-stream",
+    );
 
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
@@ -46,9 +51,7 @@ function uploadToR2(uploadUrl: string, file: File | Blob, onProgress: (pct: numb
   });
 }
 
-// Grabs a single frame from the video file client-side (no server-side ffmpeg
-// needed) by loading it into a hidden <video>, seeking a bit in, and drawing
-// that frame to a <canvas>. Returns a JPEG blob.
+// Thumbnail
 function captureThumbnail(file: File): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
@@ -63,7 +66,9 @@ function captureThumbnail(file: File): Promise<Blob> {
 
     video.onloadedmetadata = () => {
       // Seek a little into the clip so we don't grab a black first frame.
-      const target = Number.isFinite(video.duration) ? Math.min(1, video.duration / 2) : 0;
+      const target = Number.isFinite(video.duration)
+        ? Math.min(1, video.duration / 2)
+        : 0;
       video.currentTime = target || 0;
     };
 
@@ -87,7 +92,7 @@ function captureThumbnail(file: File): Promise<Blob> {
           else reject(new Error("Could not generate thumbnail image"));
         },
         "image/jpeg",
-        0.8
+        0.8,
       );
     };
 
@@ -98,7 +103,10 @@ function captureThumbnail(file: File): Promise<Blob> {
   });
 }
 
-export default function VideoUpload({ onUploadComplete, className }: VideoUploadProps) {
+export default function VideoUpload({
+  onUploadComplete,
+  className,
+}: VideoUploadProps) {
   const { user } = useAuth();
 
   const [file, setFile] = useState<File | null>(null);
@@ -117,7 +125,7 @@ export default function VideoUpload({ onUploadComplete, className }: VideoUpload
       gsap.fromTo(
         cardRef.current,
         { opacity: 0, y: 30, scale: 0.95 },
-        { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "power2.out" }
+        { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "power2.out" },
       );
     }
   }, []);
@@ -156,7 +164,9 @@ export default function VideoUpload({ onUploadComplete, className }: VideoUpload
     }
 
     if (!user) {
-      toast("Not Signed In", { description: "Please sign in before uploading" });
+      toast("Not Signed In", {
+        description: "Please sign in before uploading",
+      });
       return;
     }
 
@@ -167,42 +177,40 @@ export default function VideoUpload({ onUploadComplete, className }: VideoUpload
       gsap.fromTo(
         progressRef.current,
         { opacity: 0, height: 0 },
-        { opacity: 1, height: "auto", duration: 0.3 }
+        { opacity: 1, height: "auto", duration: 0.3 },
       );
     }
 
     try {
-      // 1. Get a presigned URL (and the R2 key the file will live at)
-      const { upload_url, r2_key } = await apiClient.getUploadUrl(file.name, file.type);
+      const { upload_url, r2_key } = await apiClient.getUploadUrl(
+        file.name,
+        file.type,
+      );
 
-      // 2. Upload the file straight to R2, with real progress
       await uploadToR2(upload_url, file, setProgress);
 
-      // 3. Best-effort thumbnail: grab a frame client-side and upload it too.
-      //    If this fails for any reason, we still proceed without one.
       let thumbnailKey: string | undefined;
       try {
         const thumbBlob = await captureThumbnail(file);
         const thumbFile = new File([thumbBlob], `${file.name}.thumb.jpg`, {
           type: "image/jpeg",
         });
-        const { upload_url: thumbUploadUrl, r2_key: thumbR2Key } = await apiClient.getUploadUrl(
-          thumbFile.name,
-          thumbFile.type
-        );
+        const { upload_url: thumbUploadUrl, r2_key: thumbR2Key } =
+          await apiClient.getUploadUrl(thumbFile.name, thumbFile.type);
         await uploadToR2(thumbUploadUrl, thumbFile, () => {});
         thumbnailKey = thumbR2Key;
       } catch (thumbError) {
-        console.warn("Thumbnail generation failed, continuing without one:", thumbError);
+        console.warn(
+          "Thumbnail generation failed, continuing without one:",
+          thumbError,
+        );
       }
 
-      // 4. Register the video's metadata — the backend reads the owner from
-      //    the Bearer token api.ts attaches automatically, no need to pass it here
       const video = await apiClient.createVideo(
         title.trim(),
         description.trim() || undefined,
         r2_key,
-        thumbnailKey
+        thumbnailKey,
       );
 
       setProgress(100);
@@ -213,7 +221,7 @@ export default function VideoUpload({ onUploadComplete, className }: VideoUpload
           gsap.fromTo(
             successRef.current,
             { scale: 0, opacity: 0 },
-            { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(1.7)" }
+            { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(1.7)" },
           );
         }
       }, 300);
@@ -221,7 +229,11 @@ export default function VideoUpload({ onUploadComplete, className }: VideoUpload
       setTimeout(() => {
         resetForm();
         if (progressRef.current) {
-          gsap.to(progressRef.current, { opacity: 0, height: 0, duration: 0.3 });
+          gsap.to(progressRef.current, {
+            opacity: 0,
+            height: 0,
+            duration: 0.3,
+          });
         }
         onUploadComplete?.(video);
         toast("Upload Successful!", {
@@ -229,7 +241,10 @@ export default function VideoUpload({ onUploadComplete, className }: VideoUpload
         });
       }, 2500);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "An error occurred during upload";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "An error occurred during upload";
       toast("Upload Failed", { description: message });
 
       setProgress(0);
@@ -294,8 +309,9 @@ export default function VideoUpload({ onUploadComplete, className }: VideoUpload
               id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Enter video description (optional)"
+              placeholder="Enter video description"
               disabled={uploading}
+              required
               className="min-h-[80px]"
             />
           </div>
@@ -312,7 +328,10 @@ export default function VideoUpload({ onUploadComplete, className }: VideoUpload
             )}
 
             {uploadSuccess && (
-              <div ref={successRef} className="flex items-center justify-center text-green-600 py-2">
+              <div
+                ref={successRef}
+                className="flex items-center justify-center text-green-600 py-2"
+              >
                 <CheckCircle className="h-5 w-5 mr-2" />
                 Upload Complete!
               </div>

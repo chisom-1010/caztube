@@ -43,7 +43,14 @@ export default function VideoJsPlayer({ video, autoplay = false }: VideoJsPlayer
       controls: true,
       autoplay,
       preload: 'auto',
-      fluid: true,
+      // `fill` (not `fluid`): the player stretches to exactly match its
+      // parent's box. The parent div below already fixes the box via
+      // Tailwind's `aspect-video` + `overflow-hidden`. `fluid` instead
+      // calculates its OWN box from the video's native aspect ratio, which
+      // — when it doesn't match 16:9 — produced a taller/shorter player
+      // than the visible container, so `overflow-hidden` clipped the
+      // bottom of the picture and the control bar along with it.
+      fill: true,
       sources: [{ src: streamUrl, type: 'video/mp4' }],
       html5: { vhs: { overrideNative: true } },
     });
@@ -100,10 +107,13 @@ export default function VideoJsPlayer({ video, autoplay = false }: VideoJsPlayer
 
   return (
     <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+      {/* `data-vjs-player` tells video.js not to wrap this in an extra div;
+          with fill:true the player sizes itself off the nearest positioned
+          ancestor, which is this `relative` container. */}
       <div data-vjs-player className="h-full w-full">
         <video
           ref={videoRef}
-          className="video-js vjs-default-skin vjs-big-play-centered vjs-fluid h-full w-full"
+          className="video-js vjs-big-play-centered"
           controls
           preload="auto"
           playsInline
